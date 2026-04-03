@@ -1,2 +1,0 @@
-add_library(crynet_services INTERFACE)
-target_link_libraries(crynet_services INTERFACE crynet_project_options)

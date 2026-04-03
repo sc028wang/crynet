@@ -9,6 +9,7 @@
 # C++ / CMake
 # =========================
 **/build/
+**/build-test/
 **/cmake-build-*/
 **/CMakeFiles/
 **/CMakeCache.txt

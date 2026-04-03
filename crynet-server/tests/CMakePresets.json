@@ -1,0 +1,22 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "tests",
+      "displayName": "crynet-server-tests",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build-test"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "tests",
+      "configurePreset": "tests"
+    }
+  ]
+}

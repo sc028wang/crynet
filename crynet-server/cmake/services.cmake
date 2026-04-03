@@ -1,0 +1,3 @@
+add_library(crynet_services INTERFACE)
+add_library(crynet::services ALIAS crynet_services)
+target_link_libraries(crynet_services INTERFACE crynet_project_options)

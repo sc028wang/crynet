@@ -1,14 +1,11 @@
-add_executable(crynet_unit_smoke
-    unit/sources/smoke_suite.cpp
-)
+cmake_minimum_required(VERSION 3.24)
 
-target_include_directories(crynet_unit_smoke PRIVATE "${CMAKE_SOURCE_DIR}")
-target_link_libraries(crynet_unit_smoke PRIVATE crynet_startup crynet_project_options)
-add_test(NAME crynet_unit_smoke COMMAND crynet_unit_smoke)
+project(crynet_tests VERSION 0.1.0 LANGUAGES CXX)
 
-add_executable(crynet_benchmark_smoke
-    benchmark/sources/startup_smoke_benchmark.cpp
-)
+set(BUILD_TESTING ON CACHE BOOL "Build crynet tests" FORCE)
 
-target_include_directories(crynet_benchmark_smoke PRIVATE "${CMAKE_SOURCE_DIR}")
-target_link_libraries(crynet_benchmark_smoke PRIVATE crynet_startup crynet_project_options)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/crynet.cmake")
+enable_testing()
+include("${CRYNET_ROOT_DIR}/cmake/tests.cmake")
+
+message(STATUS "Configured crynet tests ${PROJECT_VERSION} with C++${CMAKE_CXX_STANDARD}")

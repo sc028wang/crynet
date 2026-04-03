@@ -1,0 +1,60 @@
+# =========================
+# macOS
+# =========================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# =========================
+# C++ / CMake
+# =========================
+**/build/
+**/cmake-build-*/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/CTestTestfile.cmake
+**/Testing/
+**/compile_commands.json
+**/.cmake/
+
+# Object files / libraries / binaries
+**/*.o
+**/*.obj
+**/*.lo
+**/*.la
+**/*.a
+**/*.so
+**/*.so.*
+**/*.dylib
+**/*.dll
+**/*.lib
+**/*.exp
+**/*.pdb
+**/*.ilk
+**/*.out
+**/*.app
+**/*.dSYM/
+
+# Coverage / profiling
+**/*.gcda
+**/*.gcno
+**/*.gcov
+**/*.profraw
+**/*.profdata
+
+# Temporary logs
+*.log
+*.tmp
+*.swp
+*.swo
+
+# =========================
+# Cocos Creator
+# =========================
+crynet-client/cocos/library/
+crynet-client/cocos/temp/
+crynet-client/cocos/local/
+crynet-client/cocos/profiles/
+crynet-client/cocos/build/
+crynet-client/cocos/native/
+crynet-client/cocos/.creator/

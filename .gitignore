@@ -1,0 +1,23 @@
+# Build directory
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+
+# Compiled binaries
+*.o
+*.a
+*.so
+*.dylib
+ping_pong
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

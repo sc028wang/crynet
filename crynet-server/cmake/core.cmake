@@ -1,9 +1,9 @@
 add_library(crynet_core STATIC
     "${CRYNET_ROOT_DIR}/core/base/sources/build_config.cpp"
+    "${CRYNET_ROOT_DIR}/core/base/sources/logger.cpp"
     "${CRYNET_ROOT_DIR}/core/actor/sources/actor_system.cpp"
     "${CRYNET_ROOT_DIR}/core/bootstrap/sources/bootstrap_config.cpp"
     "${CRYNET_ROOT_DIR}/core/bootstrap/sources/bootstrapper.cpp"
-    "${CRYNET_ROOT_DIR}/core/logger/sources/logger.cpp"
     "${CRYNET_ROOT_DIR}/core/monitor/sources/monitor_runner.cpp"
     "${CRYNET_ROOT_DIR}/core/metrics/sources/metrics_system.cpp"
     "${CRYNET_ROOT_DIR}/core/actor/sources/handle_registry.cpp"

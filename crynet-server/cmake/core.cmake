@@ -1,5 +1,16 @@
 add_library(crynet_core STATIC
     "${CRYNET_ROOT_DIR}/core/base/sources/build_config.cpp"
+    "${CRYNET_ROOT_DIR}/core/actor/sources/actor_system.cpp"
+    "${CRYNET_ROOT_DIR}/core/bootstrap/sources/bootstrap_config.cpp"
+    "${CRYNET_ROOT_DIR}/core/bootstrap/sources/bootstrapper.cpp"
+    "${CRYNET_ROOT_DIR}/core/actor/sources/handle_registry.cpp"
+    "${CRYNET_ROOT_DIR}/core/actor/sources/message.cpp"
+    "${CRYNET_ROOT_DIR}/core/actor/sources/message_queue.cpp"
+    "${CRYNET_ROOT_DIR}/core/actor/sources/session_manager.cpp"
+    "${CRYNET_ROOT_DIR}/core/actor/sources/service_context.cpp"
+    "${CRYNET_ROOT_DIR}/core/scheduler/sources/ready_queue.cpp"
+    "${CRYNET_ROOT_DIR}/core/scheduler/sources/worker_scheduler.cpp"
+    "${CRYNET_ROOT_DIR}/core/scheduler/timer/sources/timer_queue.cpp"
 )
 
 add_library(crynet::core ALIAS crynet_core)

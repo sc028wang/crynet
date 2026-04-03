@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 #include <string>
 
 namespace crynet::startup {
@@ -58,8 +60,42 @@ public:
      */
     [[nodiscard]] int run() noexcept;
 
+    /**
+     * @cn
+     * 判断 bootstrap 流程是否已成功执行完成。
+     *
+     * @en
+     * Check whether the bootstrap flow has completed successfully.
+     */
+    [[nodiscard]] bool bootstrap_ready() const noexcept;
+
 private:
+    /**
+     * @cn
+     * 返回内置的最小 bootstrap 文本配置。
+     *
+     * @en
+     * Return the built-in minimal bootstrap text configuration.
+     */
+    [[nodiscard]] static std::string_view default_bootstrap_config() noexcept;
+
+    /**
+     * @cn
+     * 标记启动壳体是否已完成初始化。
+     *
+     * @en
+     * Mark whether the startup shell has completed initialization.
+     */
     bool m_b_initialized{false};
+
+    /**
+     * @cn
+     * 标记 bootstrap 链路是否已成功执行。
+     *
+     * @en
+     * Mark whether the bootstrap chain has executed successfully.
+     */
+    bool m_b_bootstrap_ready{false};
 };
 
 }  // namespace crynet::startup

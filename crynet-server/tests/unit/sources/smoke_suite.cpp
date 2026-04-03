@@ -5,7 +5,7 @@
 #include "core/bootstrap/includes/bootstrap_config.h"
 #include "core/bootstrap/includes/bootstrapper.h"
 #include "core/actor/includes/handle_registry.h"
-#include "core/logger/includes/logger.h"
+#include "core/base/includes/logger.h"
 #include "core/monitor/includes/monitor_runner.h"
 #include "core/metrics/includes/metrics_system.h"
 #include "core/actor/includes/message_queue.h"

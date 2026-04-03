@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "configure tests preset",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--preset",
+				"tests"
+			],
+			"isBackground": false
+		}
+	]
+}

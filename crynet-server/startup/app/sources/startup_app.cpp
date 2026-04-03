@@ -3,7 +3,7 @@
 #include "core/base/includes/build_config.h"
 #include "core/bootstrap/includes/bootstrap_config.h"
 #include "core/bootstrap/includes/bootstrapper.h"
-#include "core/logger/includes/logger.h"
+#include "core/base/includes/logger.h"
 #include "core/monitor/includes/monitor_runner.h"
 #include "core/metrics/includes/metrics_system.h"
 #include "core/scheduler/includes/worker_monitor.h"

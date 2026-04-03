@@ -12,3 +12,10 @@ add_executable(crynet_benchmark_smoke
 
 target_include_directories(crynet_benchmark_smoke PRIVATE "${CRYNET_ROOT_DIR}")
 target_link_libraries(crynet_benchmark_smoke PRIVATE crynet::startup crynet_project_options)
+
+add_executable(crynet_benchmark_actor_echo
+    "${CRYNET_ROOT_DIR}/tests/benchmark/sources/actor_echo_benchmark.cpp"
+)
+
+target_include_directories(crynet_benchmark_actor_echo PRIVATE "${CRYNET_ROOT_DIR}")
+target_link_libraries(crynet_benchmark_actor_echo PRIVATE crynet::core crynet_project_options)

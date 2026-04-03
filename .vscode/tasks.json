@@ -1,0 +1,101 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build actor echo benchmark",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"/Users/wzw/GitHub/crynet/crynet-server/build-test",
+				"--target",
+				"crynet_benchmark_actor_echo"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "configure crynet tests preset",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"-S",
+				"/Users/wzw/GitHub/crynet/crynet-server/tests",
+				"-B",
+				"/Users/wzw/GitHub/crynet/crynet-server/build-test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "build actor echo benchmark target",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"/Users/wzw/GitHub/crynet/crynet-server/build-test",
+				"--target",
+				"crynet_benchmark_actor_echo"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "reconfigure crynet tests build",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"-S",
+				"/Users/wzw/GitHub/crynet/crynet-server/tests",
+				"-B",
+				"/Users/wzw/GitHub/crynet/crynet-server/build-test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "reconfigure crynet tests after logger path fix",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"-S",
+				"/Users/wzw/GitHub/crynet/crynet-server/tests",
+				"-B",
+				"/Users/wzw/GitHub/crynet/crynet-server/build-test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "build crynet smoke after logger fix",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"/Users/wzw/GitHub/crynet/crynet-server/build-test",
+				"--target",
+				"crynet_unit_smoke"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "build actor echo benchmark after logger fix",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"/Users/wzw/GitHub/crynet/crynet-server/build-test",
+				"--target",
+				"crynet_benchmark_actor_echo"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "run crynet smoke after actor benchmark",
+			"type": "shell",
+			"command": "/Users/wzw/GitHub/crynet/crynet-server/build-test/bin/crynet_unit_smoke",
+			"isBackground": false
+		},
+		{
+			"label": "run actor echo benchmark target",
+			"type": "shell",
+			"command": "/Users/wzw/GitHub/crynet/crynet-server/build-test/bin/crynet_benchmark_actor_echo",
+			"isBackground": false
+		}
+	]
+}

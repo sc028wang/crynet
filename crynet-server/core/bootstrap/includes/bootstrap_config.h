@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -37,6 +38,42 @@ struct BootstrapServiceConfig final {
 
 /**
  * @cn
+ * 启动阶段 monitor 插件配置，控制是否装配以及如何执行基础检查。
+ *
+ * @en
+ * Monitor-plugin configuration for startup, controlling whether it is attached and how baseline checks run.
+ */
+struct BootstrapMonitorConfig final {
+    /**
+     * @cn
+     * 是否在启动阶段启用 monitor 插件。
+     *
+     * @en
+     * Whether the monitor plugin is enabled during startup.
+     */
+    bool enabled{false};
+
+    /**
+     * @cn
+     * 是否允许 monitor 直接通过 logger 输出告警。
+     *
+     * @en
+     * Whether the monitor may emit alerts directly through the logger.
+     */
+    bool logger_alert_enabled{true};
+
+    /**
+     * @cn
+     * monitor runner 在启动阶段执行的检查轮次数量。
+     *
+     * @en
+     * Number of monitor-runner check passes executed during startup.
+     */
+    std::size_t check_cycles{1};
+};
+
+/**
+ * @cn
  * 最小引导配置对象，负责从文本中加载服务列表和超时参数。
  *
  * @en
@@ -52,6 +89,15 @@ public:
      * Parse bootstrap configuration from text; supported directives are `service <name> <payload>` and `timeout_ms <n>`.
      */
     [[nodiscard]] static std::optional<BootstrapConfig> from_text(std::string_view config_text);
+
+    /**
+     * @cn
+     * 从配置文件中加载引导配置。
+     *
+     * @en
+     * Load bootstrap configuration from a configuration file.
+     */
+    [[nodiscard]] static std::optional<BootstrapConfig> from_file(const std::filesystem::path& file_path);
 
     /**
      * @cn
@@ -71,6 +117,15 @@ public:
      */
     [[nodiscard]] std::chrono::milliseconds timeout() const noexcept;
 
+    /**
+     * @cn
+     * 返回启动阶段的 monitor 插件配置。
+     *
+     * @en
+     * Return the monitor-plugin configuration used during startup.
+     */
+    [[nodiscard]] const BootstrapMonitorConfig& monitor() const noexcept;
+
 private:
     /**
      * @cn
@@ -89,6 +144,15 @@ private:
      * Default bootstrap timeout duration.
      */
     std::chrono::milliseconds m_timeout{0};
+
+    /**
+     * @cn
+     * 启动阶段的 monitor 插件配置。
+     *
+     * @en
+     * Monitor-plugin configuration for startup.
+     */
+    BootstrapMonitorConfig m_monitor;
 };
 
 }  // namespace crynet::bootstrap

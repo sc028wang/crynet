@@ -604,16 +604,16 @@ crynet-server/
 ## 14.3 M1：运行时内核 MVP
 
 ### 任务清单
-- [ ] `T1-1` 实现 `ServiceContext` 抽象
-- [ ] `T1-2` 实现 `HandleRegistry`（服务 ID / name 映射）
-- [ ] `T1-3` 实现 `Message` 数据结构与消息类型系统
-- [ ] `T1-4` 实现每服务独立消息队列
-- [ ] `T1-5` 实现全局调度队列与 worker 调度器
-- [ ] `T1-6` 实现 session / response 机制
-- [ ] `T1-7` 实现 timer wheel / timeout 投递
-- [ ] `T1-8` 实现 service 生命周期：`create/init/start/stop/release`
-- [ ] `T1-9` 实现基础配置加载与 bootstrap 启动流程
-- [ ] `T1-10` 实现 logger 初版
+- [x] `T1-1` 实现 `ServiceContext` 抽象
+- [x] `T1-2` 实现 `HandleRegistry`（服务 ID / name 映射）
+- [x] `T1-3` 实现 `Message` 数据结构与消息类型系统
+- [x] `T1-4` 实现每服务独立消息队列
+- [x] `T1-5` 实现全局调度队列与 worker 调度器
+- [x] `T1-6` 实现 session / response 机制
+- [x] `T1-7` 实现 timer wheel / timeout 投递
+- [x] `T1-8` 实现 service 生命周期：`create/init/start/stop/release`
+- [x] `T1-9` 实现基础配置加载与 bootstrap 启动流程
+- [x] `T1-10` 实现 logger 初版
 
 ### 可交付物
 - 纯 `C++` 运行时可启动
@@ -749,7 +749,7 @@ crynet-server/
 建议我们按下面顺序直接开工：
 
 1. [ ] 先完成 `T0-1 ~ T0-6`：把工程骨架搭起来
-2. [ ] 再完成 `T1-1 ~ T1-10`：拿到纯 `C++` Actor MVP
+2. [x] 再完成 `T1-1 ~ T1-10`：拿到纯 `C++` Actor MVP
 3. [ ] 再完成 `T2-1 ~ T2-8`：跑通网络接入和 gate
 4. [ ] 再完成 `T3-1 ~ T3-8`：接入 `V8`，让 JS 服务可运行
 5. [ ] 最后推进 `T4/T5/T6`：做压测、集群和生产化

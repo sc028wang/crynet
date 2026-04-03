@@ -64,6 +64,15 @@ public:
      */
     [[nodiscard]] std::size_t size() const noexcept;
 
+    /**
+     * @cn
+     * 取消所有与指定服务相关的挂起会话，并返回移除数量。
+     *
+     * @en
+     * Cancel all pending sessions associated with the specified service and return the removal count.
+     */
+    [[nodiscard]] std::size_t cancel_for_handle(ServiceHandle handle) noexcept;
+
 private:
     /**
      * @cn

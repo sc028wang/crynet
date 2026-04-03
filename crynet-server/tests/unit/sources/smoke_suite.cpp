@@ -5,15 +5,23 @@
 #include "core/bootstrap/includes/bootstrap_config.h"
 #include "core/bootstrap/includes/bootstrapper.h"
 #include "core/actor/includes/handle_registry.h"
+#include "core/logger/includes/logger.h"
+#include "core/monitor/includes/monitor_runner.h"
+#include "core/metrics/includes/metrics_system.h"
 #include "core/actor/includes/message_queue.h"
 #include "core/actor/includes/session_manager.h"
 #include "core/actor/includes/service_context.h"
 #include "core/scheduler/includes/ready_queue.h"
+#include "core/scheduler/includes/worker_loop.h"
+#include "core/scheduler/includes/worker_monitor.h"
+#include "core/scheduler/includes/worker_runner.h"
 #include "core/scheduler/includes/worker_scheduler.h"
 #include "core/scheduler/timer/includes/timer_queue.h"
 #include "startup/app/includes/startup_app.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -248,6 +256,26 @@ bool verify_message_queue() {
         return false;
     }
 
+    crynet::core::MessageQueue overload_queue{2002};
+    for (std::size_t index = 0; index < 1025; ++index) {
+        if (!overload_queue.enqueue(crynet::core::Message::from_text(
+                crynet::core::MessageType::Event,
+                1001,
+                2002,
+                static_cast<crynet::core::SessionId>(index + 1),
+                "overload"
+            ))) {
+            std::cerr << "[unit] message queue overload enqueue failed" << std::endl;
+            return false;
+        }
+    }
+
+    const auto overload_size = overload_queue.take_overload();
+    if (!overload_size.has_value() || overload_size.value() != 1025 || overload_queue.peak_size() != 1025) {
+        std::cerr << "[unit] message queue overload tracking mismatch" << std::endl;
+        return false;
+    }
+
     return true;
 }
 
@@ -351,6 +379,11 @@ bool verify_worker_scheduler() {
         return false;
     }
 
+    if (!scheduler.complete(1002) || !scheduler.complete(1001) || scheduler.in_flight_count() != 0) {
+        std::cerr << "[unit] worker scheduler final completion mismatch" << std::endl;
+        return false;
+    }
+
     return true;
 }
 
@@ -364,10 +397,14 @@ bool verify_worker_scheduler() {
 bool verify_timer_queue() {
     crynet::core::TimerQueue timer_queue;
 
+    const auto start = std::chrono::steady_clock::now();
+
     const auto fired_id = timer_queue.schedule_after(2001, 3001, std::chrono::milliseconds{1}, "fire");
     const auto cancelled_id = timer_queue.schedule_after(2002, 3002, std::chrono::milliseconds{5}, "cancel");
+    const auto near_id = timer_queue.schedule_after(2003, 3003, std::chrono::milliseconds{300}, "near");
+    const auto cascaded_id = timer_queue.schedule_after(2004, 3004, std::chrono::milliseconds{17000}, "cascaded");
 
-    if (fired_id == 0 || cancelled_id == 0 || fired_id == cancelled_id) {
+    if (fired_id == 0 || cancelled_id == 0 || near_id == 0 || cascaded_id == 0 || fired_id == cancelled_id) {
         std::cerr << "[unit] timer queue id allocation mismatch" << std::endl;
         return false;
     }
@@ -377,13 +414,13 @@ bool verify_timer_queue() {
         return false;
     }
 
-    const auto immediate = timer_queue.poll_expired(std::chrono::steady_clock::now());
+    const auto immediate = timer_queue.poll_expired(start);
     if (!immediate.empty()) {
         std::cerr << "[unit] timer queue should not fire before deadline" << std::endl;
         return false;
     }
 
-    const auto expired = timer_queue.poll_expired(std::chrono::steady_clock::now() + std::chrono::milliseconds{10});
+    const auto expired = timer_queue.poll_expired(start + std::chrono::milliseconds{10});
     if (expired.size() != 1) {
         std::cerr << "[unit] timer queue expiration count mismatch" << std::endl;
         return false;
@@ -393,6 +430,32 @@ bool verify_timer_queue() {
     if (message.type() != crynet::core::MessageType::Timer || message.target_handle() != 2001 ||
         message.session_id() != 3001 || message.text_payload() != "fire") {
         std::cerr << "[unit] timer queue expiration payload mismatch" << std::endl;
+        return false;
+    }
+
+    const auto before_near = timer_queue.poll_expired(start + std::chrono::milliseconds{299});
+    if (!before_near.empty()) {
+        std::cerr << "[unit] timer queue should keep near-level task pending" << std::endl;
+        return false;
+    }
+
+    const auto near_expired = timer_queue.poll_expired(start + std::chrono::milliseconds{300});
+    if (near_expired.size() != 1 || near_expired.front().target_handle() != 2003 ||
+        near_expired.front().text_payload() != "near") {
+        std::cerr << "[unit] timer queue near-level cascade mismatch" << std::endl;
+        return false;
+    }
+
+    const auto before_cascaded = timer_queue.poll_expired(start + std::chrono::milliseconds{16999});
+    if (!before_cascaded.empty()) {
+        std::cerr << "[unit] timer queue should keep upper-level task pending" << std::endl;
+        return false;
+    }
+
+    const auto cascaded_expired = timer_queue.poll_expired(start + std::chrono::milliseconds{17000});
+    if (cascaded_expired.size() != 1 || cascaded_expired.front().target_handle() != 2004 ||
+        cascaded_expired.front().session_id() != 3004 || cascaded_expired.front().text_payload() != "cascaded") {
+        std::cerr << "[unit] timer queue upper-level cascade mismatch" << std::endl;
         return false;
     }
 
@@ -529,6 +592,504 @@ bool verify_actor_system() {
         return false;
     }
 
+    if (!runtime.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            caller_handle.value(),
+            0,
+            "batch-1"
+        )) ||
+        !runtime.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            caller_handle.value(),
+            0,
+            "batch-2"
+        )) ||
+        !runtime.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            caller_handle.value(),
+            0,
+            "batch-3"
+        ))) {
+        std::cerr << "[unit] actor system batch enqueue failed" << std::endl;
+        return false;
+    }
+
+    if (runtime.dispatch_batch(2) != 2 || runtime.pending_messages(caller_handle.value()) != 1) {
+        std::cerr << "[unit] actor system batch dispatch mismatch" << std::endl;
+        return false;
+    }
+
+    if (runtime.run_until_idle(4, 2) != 1 || observed_messages.back() != "caller:batch-3") {
+        std::cerr << "[unit] actor system run_until_idle mismatch" << std::endl;
+        return false;
+    }
+
+    if (!runtime.stop_service(caller_handle.value())) {
+        std::cerr << "[unit] actor system stop service failed" << std::endl;
+        return false;
+    }
+
+    const auto stopped_state = runtime.service_state(caller_handle.value());
+    if (!stopped_state.has_value() || stopped_state.value() != crynet::core::ServiceState::Stopped) {
+        std::cerr << "[unit] actor system stop state mismatch" << std::endl;
+        return false;
+    }
+
+    if (runtime.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            service_handle.value(),
+            caller_handle.value(),
+            0,
+            "after-stop"
+        ))) {
+        std::cerr << "[unit] actor system should reject messages to stopped services" << std::endl;
+        return false;
+    }
+
+    const auto released_timer = runtime.schedule_timeout(
+        service_handle.value(),
+        5001,
+        std::chrono::milliseconds{1000},
+        "release"
+    );
+    if (released_timer == 0) {
+        std::cerr << "[unit] actor system release timer allocation failed" << std::endl;
+        return false;
+    }
+
+    if (!runtime.release_service(service_handle.value()) || runtime.find_service_handle("echo").has_value() ||
+        runtime.service_state(service_handle.value()).has_value()) {
+        std::cerr << "[unit] actor system release service mismatch" << std::endl;
+        return false;
+    }
+
+    if (runtime.pending_sessions() != 0 || runtime.service_count() != 1) {
+        std::cerr << "[unit] actor system release cleanup mismatch" << std::endl;
+        return false;
+    }
+
+    if (runtime.shutdown() != 1 || runtime.service_count() != 0) {
+        std::cerr << "[unit] actor system shutdown mismatch" << std::endl;
+        return false;
+    }
+
+    const auto metrics = runtime.metrics();
+    if (metrics.registered_services != 0 || metrics.pending_sessions != 0 || metrics.queued_messages != 0 ||
+        metrics.enqueued_messages != 6 || metrics.dispatched_messages != 6 || metrics.timer_messages != 1 ||
+        metrics.dropped_messages != 1 || metrics.queue_overload_events != 0 || metrics.peak_queue_depth != 3) {
+        std::cerr << "[unit] actor system metrics mismatch"
+                  << " registered=" << metrics.registered_services
+                  << " pending_sessions=" << metrics.pending_sessions
+                  << " queued=" << metrics.queued_messages
+                  << " enqueued=" << metrics.enqueued_messages
+                  << " dispatched=" << metrics.dispatched_messages
+                  << " timers=" << metrics.timer_messages
+                  << " dropped=" << metrics.dropped_messages
+                  << " overloads=" << metrics.queue_overload_events
+                  << " peak_queue_depth=" << metrics.peak_queue_depth
+                  << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @cn
+ * 验证 worker 循环是否能统一驱动定时器注入、批量分发以及停止控制。
+ *
+ * @en
+ * Validate that the worker loop can drive timer injection, batched dispatch,
+ * and stop control through one execution entry point.
+ */
+bool verify_worker_loop() {
+    crynet::core::ActorSystem system;
+    std::vector<std::string> observed_messages;
+
+    const auto service_handle = system.register_service(
+        "worker",
+        [&observed_messages](crynet::core::ServiceContext& context, const crynet::core::Message& message) {
+            observed_messages.push_back(
+                std::string{context.name()} + ":" + std::string{message.text_payload()}
+            );
+        }
+    );
+    if (!service_handle.has_value()) {
+        std::cerr << "[unit] worker loop service registration failed" << std::endl;
+        return false;
+    }
+
+    crynet::core::WorkerLoop worker_loop{system};
+    const auto start = std::chrono::steady_clock::now();
+
+    if (!system.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            service_handle.value(),
+            0,
+            "immediate"
+        ))) {
+        std::cerr << "[unit] worker loop immediate enqueue failed" << std::endl;
+        return false;
+    }
+
+    const auto delayed_timer = system.schedule_timeout(
+        service_handle.value(),
+        4101,
+        std::chrono::milliseconds{300},
+        "delayed"
+    );
+    if (delayed_timer == 0) {
+        std::cerr << "[unit] worker loop delayed timer allocation failed" << std::endl;
+        return false;
+    }
+
+    const auto first_turn = worker_loop.run_once(start, 2);
+    if (first_turn.injected_timer_messages != 0 || first_turn.dispatched_messages != 1 ||
+        observed_messages.size() != 1 || observed_messages.front() != "worker:immediate") {
+        std::cerr << "[unit] worker loop first turn mismatch" << std::endl;
+        return false;
+    }
+
+    const auto idle_turn = worker_loop.run_once(start + std::chrono::milliseconds{299}, 2);
+    if (!idle_turn.idle()) {
+        std::cerr << "[unit] worker loop should remain idle before timeout" << std::endl;
+        return false;
+    }
+
+    const auto timeout_turn = worker_loop.run_once(start + std::chrono::milliseconds{300}, 2);
+    if (timeout_turn.injected_timer_messages != 1 || timeout_turn.dispatched_messages != 1 ||
+        observed_messages.size() != 2 || observed_messages.back() != "worker:delayed") {
+        std::cerr << "[unit] worker loop timeout turn mismatch" << std::endl;
+        return false;
+    }
+
+    if (!system.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            service_handle.value(),
+            0,
+            "after-stop"
+        ))) {
+        std::cerr << "[unit] worker loop stop test enqueue failed" << std::endl;
+        return false;
+    }
+
+    worker_loop.request_stop();
+    if (!worker_loop.stop_requested() || worker_loop.run_until_idle(4, 2) != 0 ||
+        system.pending_messages(service_handle.value()) != 1) {
+        std::cerr << "[unit] worker loop stop request mismatch" << std::endl;
+        return false;
+    }
+
+    worker_loop.reset_stop();
+    if (worker_loop.stop_requested() || worker_loop.run_until_idle(4, 2) != 1 ||
+        system.pending_messages(service_handle.value()) != 0 || observed_messages.back() != "worker:after-stop") {
+        std::cerr << "[unit] worker loop reset mismatch" << std::endl;
+        return false;
+    }
+
+    const auto metrics = system.metrics();
+    if (metrics.timer_messages != 1 || metrics.dispatched_messages != 3 || metrics.queued_messages != 0) {
+        std::cerr << "[unit] worker loop metrics mismatch" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @cn
+ * 验证 worker monitor 的 trigger/check/clear 语义是否接近 skynet monitor。
+ *
+ * @en
+ * Validate that worker-monitor trigger/check/clear semantics align with skynet monitor behavior.
+ */
+bool verify_worker_monitor() {
+    crynet::core::WorkerMonitor monitor{2};
+    auto& logger = crynet::core::Logger::default_logger();
+    std::vector<std::string> captured_lines;
+    std::vector<crynet::core::WorkerMonitorAlert> alerts;
+
+    logger.set_level(crynet::core::LogLevel::Info);
+    logger.set_sink(
+        [&captured_lines](const crynet::core::LogRecord& record, std::string_view formatted_line) {
+            static_cast<void>(record);
+            captured_lines.emplace_back(formatted_line);
+        }
+    );
+    monitor.set_alert_sink(
+        [&alerts](const crynet::core::WorkerMonitorAlert& alert) {
+            alerts.push_back(alert);
+        }
+    );
+
+    monitor.mark_sleeping(0);
+    monitor.mark_sleeping(1);
+    if (monitor.snapshot().sleeping_workers != 2 || !monitor.should_wake(0)) {
+        std::cerr << "[unit] worker monitor initial sleep mismatch" << std::endl;
+        return false;
+    }
+
+    monitor.trigger(0, crynet::core::DispatchTrace{
+        .message_type = crynet::core::MessageType::Request,
+        .source_handle = 1001,
+        .target_handle = 2001,
+        .session_id = 3001,
+    });
+
+    const auto active_route = monitor.active_route(0);
+    if (!active_route.has_value() || active_route->source_handle != 1001 || active_route->target_handle != 2001 ||
+        active_route->session_id != 3001 || active_route->message_type != crynet::core::MessageType::Request) {
+        std::cerr << "[unit] worker monitor trigger route mismatch" << std::endl;
+        return false;
+    }
+
+    if (monitor.check_stalled(0).has_value()) {
+        std::cerr << "[unit] worker monitor should not report stall on first check" << std::endl;
+        return false;
+    }
+
+    const auto stalled_route = monitor.check_stalled(0);
+    if (!stalled_route.has_value() || stalled_route->source_handle != 1001 || stalled_route->target_handle != 2001) {
+        logger.reset();
+        std::cerr << "[unit] worker monitor stall detection mismatch" << std::endl;
+        return false;
+    }
+
+    if (alerts.size() != 1 || alerts.front().worker_id != 0 || alerts.front().route.target_handle != 2001 ||
+        alerts.front().message.find("worker 0 may be stalled") == std::string::npos) {
+        logger.reset();
+        std::cerr << "[unit] worker monitor alert callback mismatch" << std::endl;
+        return false;
+    }
+
+    if (captured_lines.size() != 1 || captured_lines.front().find("[error] [monitor] worker 0 may be stalled") == std::string::npos) {
+        logger.reset();
+        std::cerr << "[unit] worker monitor logger alert mismatch" << std::endl;
+        return false;
+    }
+
+    monitor.clear(0);
+    if (monitor.active_route(0).has_value() || monitor.check_stalled(0).has_value()) {
+        logger.reset();
+        std::cerr << "[unit] worker monitor clear mismatch" << std::endl;
+        return false;
+    }
+
+    if (monitor.snapshot().stall_events != 1) {
+        logger.reset();
+        std::cerr << "[unit] worker monitor stall event mismatch" << std::endl;
+        return false;
+    }
+
+    logger.reset();
+
+    return true;
+}
+
+/**
+ * @cn
+ * 验证 worker monitor 与 runner 是否能维护 sleep/wake/quit 语义。
+ *
+ * @en
+ * Validate that the worker monitor and runner preserve sleep, wake, and quit semantics.
+ */
+bool verify_worker_runner() {
+    crynet::core::ActorSystem system;
+    std::vector<std::string> observed_messages;
+
+    const auto service_handle = system.register_service(
+        "runner",
+        [&observed_messages](crynet::core::ServiceContext& context, const crynet::core::Message& message) {
+            observed_messages.push_back(
+                std::string{context.name()} + ":" + std::string{message.text_payload()}
+            );
+        }
+    );
+    if (!service_handle.has_value()) {
+        std::cerr << "[unit] worker runner service registration failed" << std::endl;
+        return false;
+    }
+
+    crynet::core::WorkerMonitor monitor{1};
+    crynet::core::WorkerRunner runner{system, 0};
+    const auto start = std::chrono::steady_clock::now();
+
+    if (runner.plugin_count() != 0) {
+        std::cerr << "[unit] worker runner initial plugin count mismatch" << std::endl;
+        return false;
+    }
+
+    const auto initial_turn = runner.run_once(start, 1);
+    if (!initial_turn.idle() || system.pending_messages(service_handle.value()) != 0) {
+        std::cerr << "[unit] worker runner initial sleep mismatch" << std::endl;
+        return false;
+    }
+
+    runner.add_plugin(monitor);
+    if (runner.plugin_count() != 1) {
+        std::cerr << "[unit] worker runner plugin attach mismatch" << std::endl;
+        return false;
+    }
+
+    const auto plugin_idle_turn = runner.run_once(start, 1);
+    const auto initial_snapshot = monitor.snapshot();
+    if (!plugin_idle_turn.idle() || initial_snapshot.sleeping_workers != 1 || initial_snapshot.wake_events != 0 ||
+        initial_snapshot.busy_turns != 0 || !monitor.should_wake(0)) {
+        std::cerr << "[unit] worker runner plugin idle mismatch" << std::endl;
+        return false;
+    }
+
+    if (!system.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            service_handle.value(),
+            0,
+            "wake"
+        ))) {
+        std::cerr << "[unit] worker runner enqueue failed" << std::endl;
+        return false;
+    }
+
+    const auto active_turn = runner.run_once(start + std::chrono::milliseconds{1}, 1);
+    const auto active_snapshot = monitor.snapshot();
+    if (active_turn.dispatched_messages != 1 || observed_messages.size() != 1 || observed_messages.front() != "runner:wake" ||
+        active_snapshot.sleeping_workers != 0 || active_snapshot.wake_events != 1 || active_snapshot.busy_turns != 1 ||
+        active_snapshot.stall_events != 0 || monitor.active_route(0).has_value() || monitor.check_stalled(0).has_value()) {
+        std::cerr << "[unit] worker runner wake mismatch" << std::endl;
+        return false;
+    }
+
+    if (!system.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            service_handle.value(),
+            0,
+            "quit"
+        ))) {
+        std::cerr << "[unit] worker runner quit enqueue failed" << std::endl;
+        return false;
+    }
+
+    monitor.request_quit();
+    if (!monitor.quit_requested() || runner.run_until_idle(4, 1) != 0 || system.pending_messages(service_handle.value()) != 1) {
+        std::cerr << "[unit] worker runner quit mismatch" << std::endl;
+        return false;
+    }
+
+    const auto quit_snapshot = monitor.snapshot();
+    if (!quit_snapshot.quit_requested || quit_snapshot.busy_turns != 1 || quit_snapshot.wake_events != 1) {
+        std::cerr << "[unit] worker runner quit snapshot mismatch" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @cn
+ * 验证不挂载任何插件时 worker runner 仍能走零插件快路径完成消息分发。
+ *
+ * @en
+ * Validate that the worker runner can still complete message dispatch through the zero-plugin fast path.
+ */
+bool verify_worker_runner_without_plugins() {
+    crynet::core::ActorSystem system;
+    std::vector<std::string> observed_messages;
+
+    const auto service_handle = system.register_service(
+        "plain-runner",
+        [&observed_messages](crynet::core::ServiceContext& context, const crynet::core::Message& message) {
+            observed_messages.push_back(
+                std::string{context.name()} + ":" + std::string{message.text_payload()}
+            );
+        }
+    );
+    if (!service_handle.has_value()) {
+        std::cerr << "[unit] worker runner no-plugin service registration failed" << std::endl;
+        return false;
+    }
+
+    crynet::core::WorkerRunner runner{system, 0};
+    if (runner.plugin_count() != 0) {
+        std::cerr << "[unit] worker runner no-plugin count mismatch" << std::endl;
+        return false;
+    }
+
+    if (!system.send(crynet::core::Message::from_text(
+            crynet::core::MessageType::Event,
+            0,
+            service_handle.value(),
+            0,
+            "plain"
+        ))) {
+        std::cerr << "[unit] worker runner no-plugin enqueue failed" << std::endl;
+        return false;
+    }
+
+    if (runner.run_until_idle(2, 1) != 1 || observed_messages.size() != 1 || observed_messages.front() != "plain-runner:plain") {
+        std::cerr << "[unit] worker runner no-plugin dispatch mismatch" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @cn
+ * 验证 monitor runner 是否能按轮次扫描 worker monitor 并触发 stall 告警。
+ *
+ * @en
+ * Validate that the monitor runner can scan the worker monitor per pass and trigger stall alerts.
+ */
+bool verify_monitor_runner() {
+    crynet::core::WorkerMonitor monitor{2};
+    crynet::monitor::MonitorRunner runner{monitor};
+    auto& logger = crynet::core::Logger::default_logger();
+    std::vector<std::string> captured_lines;
+
+    logger.set_level(crynet::core::LogLevel::Info);
+    logger.set_sink(
+        [&captured_lines](const crynet::core::LogRecord& record, std::string_view formatted_line) {
+            static_cast<void>(record);
+            captured_lines.emplace_back(formatted_line);
+        }
+    );
+
+    monitor.trigger(0, crynet::core::DispatchTrace{
+        .message_type = crynet::core::MessageType::Event,
+        .source_handle = 7001,
+        .target_handle = 8001,
+        .session_id = 9001,
+    });
+
+    const auto first_pass = runner.check_once();
+    if (first_pass.scanned_workers != 2 || first_pass.detected_stalls != 0) {
+        logger.reset();
+        std::cerr << "[unit] monitor runner first pass mismatch" << std::endl;
+        return false;
+    }
+
+    const auto second_pass = runner.check_once();
+    if (second_pass.scanned_workers != 2 || second_pass.detected_stalls != 1 ||
+        captured_lines.size() != 1 || captured_lines.front().find("[error] [monitor] worker 0 may be stalled") == std::string::npos) {
+        logger.reset();
+        std::cerr << "[unit] monitor runner second pass mismatch" << std::endl;
+        return false;
+    }
+
+    monitor.request_quit();
+    if (runner.run_checks(4) != 0) {
+        logger.reset();
+        std::cerr << "[unit] monitor runner quit mismatch" << std::endl;
+        return false;
+    }
+
+    logger.reset();
     return true;
 }
 
@@ -544,6 +1105,9 @@ bool verify_bootstrap_config() {
         "service bootstrap ready\n"
         "service echo hello\n"
         "timeout_ms 25\n"
+        "monitor.enabled true\n"
+        "monitor.logger_alert off\n"
+        "monitor.check_cycles 3\n"
     );
 
     if (!config.has_value()) {
@@ -552,13 +1116,38 @@ bool verify_bootstrap_config() {
     }
 
     if (config->services().size() != 2 || config->services().front().name != "bootstrap" ||
-        config->services().front().boot_payload != "ready" || config->timeout() != std::chrono::milliseconds{25}) {
+        config->services().front().boot_payload != "ready" || config->timeout() != std::chrono::milliseconds{25} ||
+        !config->monitor().enabled || config->monitor().logger_alert_enabled || config->monitor().check_cycles != 3) {
         std::cerr << "[unit] bootstrap config content mismatch" << std::endl;
         return false;
     }
 
     if (crynet::bootstrap::BootstrapConfig::from_text("timeout_ms nope\n").has_value()) {
         std::cerr << "[unit] bootstrap config should reject invalid timeout" << std::endl;
+        return false;
+    }
+
+    if (crynet::bootstrap::BootstrapConfig::from_text("service bootstrap ready\nmonitor.enabled maybe\n").has_value()) {
+        std::cerr << "[unit] bootstrap config should reject invalid monitor bool" << std::endl;
+        return false;
+    }
+
+    const auto file_path = std::filesystem::temp_directory_path() / "crynet-bootstrap-config-test.cfg";
+    {
+        std::ofstream output{file_path};
+        output << "service bootstrap from-file\n";
+        output << "timeout_ms 30\n";
+        output << "monitor.enabled on\n";
+        output << "monitor.check_cycles 2\n";
+    }
+
+    const auto file_config = crynet::bootstrap::BootstrapConfig::from_file(file_path);
+    std::filesystem::remove(file_path);
+    if (!file_config.has_value() || file_config->services().size() != 1 ||
+        file_config->services().front().boot_payload != "from-file" ||
+        file_config->timeout() != std::chrono::milliseconds{30} || !file_config->monitor().enabled ||
+        file_config->monitor().check_cycles != 2) {
+        std::cerr << "[unit] bootstrap config file loading mismatch" << std::endl;
         return false;
     }
 
@@ -627,6 +1216,64 @@ bool verify_bootstrapper() {
         return false;
     }
 
+    const auto metrics = bootstrapper.system().metrics();
+    if (metrics.registered_services != 2 || metrics.queued_messages != 0 || metrics.dispatched_messages != 2) {
+        std::cerr << "[unit] bootstrapper metrics mismatch" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @cn
+ * 验证 logger 是否支持级别过滤、自定义 sink 与格式化输出。
+ *
+ * @en
+ * Validate that the logger supports level filtering, custom sinks, and formatted output.
+ */
+bool verify_logger() {
+    auto& logger = crynet::core::Logger::default_logger();
+    std::vector<std::string> captured_lines;
+    std::vector<crynet::core::LogRecord> captured_records;
+
+    logger.set_level(crynet::core::LogLevel::Info);
+    logger.set_sink(
+        [&captured_lines, &captured_records](const crynet::core::LogRecord& record, std::string_view formatted_line) {
+            captured_records.push_back(record);
+            captured_lines.emplace_back(formatted_line);
+        }
+    );
+
+    logger.log(crynet::core::LogLevel::Debug, "logger", "skip-me");
+    logger.log(crynet::core::LogLevel::Info, "startup", "ready");
+    logger.log(crynet::core::LogLevel::Error, "actor", "failed");
+
+    logger.reset();
+
+    if (captured_records.size() != 2 || captured_lines.size() != 2) {
+        std::cerr << "[unit] logger capture count mismatch" << std::endl;
+        return false;
+    }
+
+    if (captured_records.front().level != crynet::core::LogLevel::Info ||
+        captured_records.front().component != "startup" ||
+        captured_records.front().message != "ready") {
+        std::cerr << "[unit] logger record payload mismatch" << std::endl;
+        return false;
+    }
+
+    if (captured_lines.front() != "[info] [startup] ready" ||
+        captured_lines.back() != "[error] [actor] failed") {
+        std::cerr << "[unit] logger formatted line mismatch" << std::endl;
+        return false;
+    }
+
+    if (crynet::core::log_level_name(crynet::core::LogLevel::Warn) != "warn") {
+        std::cerr << "[unit] logger level name mismatch" << std::endl;
+        return false;
+    }
+
     return true;
 }
 
@@ -685,11 +1332,35 @@ int SmokeSuite::run() noexcept {
         return 1;
     }
 
+    if (!verify_worker_loop()) {
+        return 1;
+    }
+
+    if (!verify_worker_monitor()) {
+        return 1;
+    }
+
+    if (!verify_worker_runner()) {
+        return 1;
+    }
+
+    if (!verify_worker_runner_without_plugins()) {
+        return 1;
+    }
+
+    if (!verify_monitor_runner()) {
+        return 1;
+    }
+
     if (!verify_bootstrap_config()) {
         return 1;
     }
 
     if (!verify_bootstrapper()) {
+        return 1;
+    }
+
+    if (!verify_logger()) {
         return 1;
     }
 

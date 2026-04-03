@@ -34,12 +34,7 @@ bool Bootstrapper::start(const BootstrapConfig& config) {
 }
 
 std::size_t Bootstrapper::dispatch_until_idle(std::size_t max_steps) {
-    std::size_t executed = 0;
-    while (executed < max_steps && m_system.dispatch_once()) {
-        ++executed;
-    }
-
-    return executed;
+    return m_system.run_until_idle(max_steps, 1);
 }
 
 std::optional<crynet::core::ServiceHandle> Bootstrapper::find_service_handle(std::string_view service_name) const {

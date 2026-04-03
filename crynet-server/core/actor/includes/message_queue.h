@@ -70,6 +70,24 @@ public:
      */
     [[nodiscard]] std::size_t size() const noexcept;
 
+    /**
+     * @cn
+     * 读取并清空最近一次 overload 观测值；若没有 overload 则返回空值。
+     *
+     * @en
+     * Read and clear the most recent overload observation; returns no value when no overload was detected.
+     */
+    [[nodiscard]] std::optional<std::size_t> take_overload() noexcept;
+
+    /**
+     * @cn
+     * 返回当前队列观测到的峰值深度。
+     *
+     * @en
+     * Return the peak depth observed by the current queue.
+     */
+    [[nodiscard]] std::size_t peak_size() const noexcept;
+
 private:
     /**
      * @cn
@@ -88,6 +106,33 @@ private:
      * Double-ended queue storing pending messages in FIFO order.
      */
     std::deque<Message> m_messages;
+
+    /**
+     * @cn
+     * 当前 overload 判断阈值，行为与 skynet 的队列阈值增长策略相近。
+     *
+     * @en
+     * Current overload threshold following a strategy similar to skynet queue-threshold growth.
+     */
+    std::size_t m_overload_threshold{1024};
+
+    /**
+     * @cn
+     * 最近一次触发 overload 时的队列深度。
+     *
+     * @en
+     * Queue depth recorded by the most recent overload event.
+     */
+    std::size_t m_overload_size{0};
+
+    /**
+     * @cn
+     * 当前队列观测到的峰值深度。
+     *
+     * @en
+     * Peak queue depth observed by the current queue.
+     */
+    std::size_t m_peak_size{0};
 };
 
 }  // namespace crynet::core

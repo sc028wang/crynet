@@ -45,4 +45,19 @@ std::size_t SessionManager::size() const noexcept {
     return m_entries.size();
 }
 
+std::size_t SessionManager::cancel_for_handle(ServiceHandle handle) noexcept {
+    std::size_t removed = 0;
+    for (auto entry = m_entries.begin(); entry != m_entries.end();) {
+        if (entry->second.caller_handle == handle || entry->second.callee_handle == handle) {
+            entry = m_entries.erase(entry);
+            ++removed;
+            continue;
+        }
+
+        ++entry;
+    }
+
+    return removed;
+}
+
 }  // namespace crynet::core

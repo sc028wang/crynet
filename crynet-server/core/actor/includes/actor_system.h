@@ -3,6 +3,7 @@
 #include "core/actor/includes/handle_registry.h"
 #include "core/actor/includes/message_queue.h"
 #include "core/actor/includes/session_manager.h"
+#include "core/metrics/includes/metrics_system.h"
 #include "core/scheduler/includes/worker_scheduler.h"
 #include "core/scheduler/timer/includes/timer_queue.h"
 
@@ -23,6 +24,60 @@ namespace crynet::core {
  * Service-message callback type used to execute one message-processing turn under scheduler control.
  */
 using MessageHandler = std::function<void(ServiceContext&, const Message&)>;
+
+/**
+ * @cn
+ * 单次消息分发的观测记录，用于把当前路由暴露给调度外部组件。
+ *
+ * @en
+ * Observation record for one message dispatch, used to expose the active route to external scheduler helpers.
+ */
+struct DispatchTrace final {
+    /**
+     * @cn
+     * 当前消息类型。
+     *
+     * @en
+     * Type of the current message.
+     */
+    MessageType message_type{MessageType::Invalid};
+
+    /**
+     * @cn
+     * 当前消息的源服务句柄。
+     *
+     * @en
+     * Source service handle of the current message.
+     */
+    ServiceHandle source_handle{0};
+
+    /**
+     * @cn
+     * 当前消息的目标服务句柄。
+     *
+     * @en
+     * Target service handle of the current message.
+     */
+    ServiceHandle target_handle{0};
+
+    /**
+     * @cn
+     * 当前消息关联的会话编号。
+     *
+     * @en
+     * Session identifier associated with the current message.
+     */
+    SessionId session_id{0};
+};
+
+/**
+ * @cn
+ * 分发观测回调类型，用于在消息执行前观察当前路由。
+ *
+ * @en
+ * Dispatch-observer callback type used to observe the active route before message execution.
+ */
+using DispatchObserver = std::function<void(const DispatchTrace&)>;
 
 /**
  * @cn
@@ -51,6 +106,33 @@ public:
      * Deliver a message to the target service and mark it runnable after successful enqueue.
      */
     [[nodiscard]] bool send(Message message);
+
+    /**
+     * @cn
+     * 停止指定服务并将其置为 `Stopped` 状态。
+     *
+     * @en
+     * Stop the specified service and move it into the `Stopped` state.
+     */
+    [[nodiscard]] bool stop_service(ServiceHandle handle) noexcept;
+
+    /**
+     * @cn
+     * 释放指定服务，清理队列、会话和定时器，并移出系统注册表。
+     *
+     * @en
+     * Release the specified service, clean up queues, sessions, and timers, and remove it from the system registry.
+     */
+    [[nodiscard]] bool release_service(ServiceHandle handle) noexcept;
+
+    /**
+     * @cn
+     * 停止并释放系统中的所有服务，返回本次移除的服务数量。
+     *
+     * @en
+     * Stop and release all services in the system and return the number removed in this pass.
+     */
+    [[nodiscard]] std::size_t shutdown() noexcept;
 
     /**
      * @cn
@@ -112,6 +194,32 @@ public:
 
     /**
      * @cn
+     * 执行一次批量调度，最多消费某个服务的指定消息数，并返回本轮处理总数。
+     *
+     * @en
+     * Execute one batched dispatch turn, consuming up to the specified number of messages from one service,
+     * and return the number processed in this turn.
+     */
+    [[nodiscard]] std::size_t dispatch_batch(
+        std::size_t max_messages_per_service = 1,
+        DispatchObserver observer = {}
+    );
+
+    /**
+     * @cn
+     * 持续调度直到系统空闲或达到批次数上限，并返回累计处理消息数。
+     *
+     * @en
+     * Continue dispatching until the system becomes idle or the batch limit is reached,
+     * and return the cumulative number of processed messages.
+     */
+    [[nodiscard]] std::size_t run_until_idle(
+        std::size_t max_batches = 64,
+        std::size_t max_messages_per_service = 1
+    );
+
+    /**
+     * @cn
      * 执行一次调度循环，处理一条消息；若本轮没有可执行工作则返回 `false`。
      *
      * @en
@@ -139,6 +247,15 @@ public:
 
     /**
      * @cn
+     * 根据句柄查询当前服务生命周期状态。
+     *
+     * @en
+     * Query the current lifecycle state of a service by handle.
+     */
+    [[nodiscard]] std::optional<ServiceState> service_state(ServiceHandle handle) const noexcept;
+
+    /**
+     * @cn
      * 返回当前挂起中的请求会话数量。
      *
      * @en
@@ -154,6 +271,15 @@ public:
      * Return the number of pending messages buffered for the specified service.
      */
     [[nodiscard]] std::size_t pending_messages(ServiceHandle handle) const noexcept;
+
+    /**
+     * @cn
+    * 返回当前 Actor 系统的指标系统快照。
+     *
+     * @en
+    * Return a metrics-system snapshot for the current actor system.
+     */
+    [[nodiscard]] MetricsSystemSnapshot metrics() const noexcept;
 
 private:
     /**
@@ -236,6 +362,15 @@ private:
      * Mapping table from service handles to system service slots.
      */
     std::unordered_map<ServiceHandle, ServiceSlot> m_services;
+
+    /**
+     * @cn
+    * 系统级指标系统累计器。
+     *
+     * @en
+     * System-wide metrics-system accumulator.
+     */
+    MetricsSystem m_metrics;
 };
 
 }  // namespace crynet::core
